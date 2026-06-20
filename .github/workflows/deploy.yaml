@@ -64,7 +64,7 @@ jobs:
           script: |
             cd /var/www/grand-current
 
-            # Login to pull your private coffee_site image
+            # Login to pull your private stars-spa image
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
             # Pull new images and restart services
@@ -80,7 +80,7 @@ jobs:
           # Wait 10 seconds for Nginx to settle
           sleep 10
           # Check if the site returns a 200 OK
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" https://thegccc.ca)
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" https://stars.willschwetz.ca)
           if [ "$STATUS" -eq 200 ]; then
             echo "site_status=online" >> $GITHUB_OUTPUT
           else
@@ -92,10 +92,10 @@ jobs:
         if: success()
         run: |
           curl \
-            -H "Title: Deploy Success ☕" \
+            -H "Title: Deploy Success " \
             -H "Priority: high" \
             -H "Tags: white_check_mark,chart_with_upwards_trend" \
-            -H "Actions: view, Open Analytics, https://thegccc.ca/stats, clear=true; view, Visit Site, https://thegccc.ca" \
+            -H "Actions: view, Open Analytics, https://stars.willschwetz.ca, clear=true; view, Visit Site, https://stars.willschwetz.ca" \
             -d "The Grand Current is live! Click below to check your traffic." \
             ntfy.sh/grand-current-co-alerts-2026
 
@@ -105,6 +105,6 @@ jobs:
           curl -H "Title: Deploy FAILED" \
                -H "Priority: urgent" \
                -H "Tags: warning,skull" \
-               -H "Actions: view, Open Analytics, https://thegccc.ca/stats, clear=true; view, Visit Site, https://thegccc.ca" \
+               -H "Actions: view, Open Analytics, https://stars.willschwetz.ca, clear=true; view, Visit Site, https://stars.willschwetz.ca" \
                -d "Deployment failed. Check GitHub Actions logs for details." \
                ntfy.sh/grand-current-co-alerts-2026
