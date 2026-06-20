@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Car Constellations — A Galaxy of Manufacturers & Models</title>
+<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+<style>
+  :root {
+    --panel: rgba(16, 20, 34, 0.82);
+    --panel-2: rgba(30, 37, 58, 0.9);
+    --border: rgba(120, 140, 190, 0.22);
+    --text: #eef2fb;
+    --muted: #97a3c0;
+    --accent: #7db4ff;
+    --collab: #ffb84d;
+    --owner: #4ee0c0;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1200px 820px at 18% 28%, rgba(98, 52, 160, 0.30), transparent 60%),
+      radial-gradient(1050px 760px at 82% 72%, rgba(28, 92, 168, 0.28), transparent 62%),
+      radial-gradient(900px 620px at 62% 14%, rgba(168, 48, 110, 0.18), transparent 60%),
+      radial-gradient(700px 700px at 40% 88%, rgba(40, 150, 150, 0.14), transparent 60%),
+      #04050c;
+  }
+  #starfield { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  #app { position: relative; z-index: 1; display: flex; height: 100vh; width: 100vw; }
+
+  #graph-wrap { position: relative; flex: 1 1 auto; height: 100%; }
+  #network { width: 100%; height: 100%; }
+
+  /* Header */
+  #header { position: absolute; top: 0; left: 0; right: 0; padding: 18px 22px; pointer-events: none; z-index: 5; }
+  #header h1 {
+    margin: 0; font-size: 21px; letter-spacing: 0.4px; font-weight: 600;
+    text-shadow: 0 0 18px rgba(125, 180, 255, 0.45);
+  }
+  #header p { margin: 5px 0 0; font-size: 13px; color: var(--muted); max-width: 560px; }
+
+  /* Controls */
+  #controls { position: absolute; top: 18px; right: 18px; z-index: 6; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .ctl-row { display: flex; gap: 8px; }
+  .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 9px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+    backdrop-filter: blur(8px); transition: background .15s, border-color .15s, box-shadow .15s;
+  }
+  .btn:hover { background: rgba(45, 56, 86, 0.95); }
+  .btn.active { border-color: var(--accent); box-shadow: 0 0 14px rgba(125, 180, 255, 0.35); background: rgba(31, 51, 84, 0.95); }
+  #search {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 9px; padding: 7px 12px; font-size: 13px; width: 210px; outline: none; backdrop-filter: blur(8px);
+  }
+  #search:focus { border-color: var(--accent); box-shadow: 0 0 14px rgba(125, 180, 255, 0.35); }
+
+  /* Legend */
+  #legend {
+    position: absolute; bottom: 18px; left: 18px; z-index: 6;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 13px 15px; font-size: 12px; backdrop-filter: blur(10px); max-width: 250px;
+  }
+  #legend .lg-title { font-weight: 600; margin-bottom: 9px; }
+  .lg-item { display: flex; align-items: center; gap: 9px; margin: 5px 0; color: var(--muted); }
+  .lg-line { width: 22px; height: 0; border-top: 3px solid; border-radius: 2px; }
+  .lg-star { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+  .lg-planet { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: #ffe09a; box-shadow: 0 0 8px #ffcf7a; }
+
+  /* Detail panel */
+  #panel {
+    flex: 0 0 370px; height: 100%; background: rgba(12, 15, 27, 0.9);
+    border-left: 1px solid var(--border); overflow-y: auto; padding: 26px;
+    transition: margin-right .28s ease; box-shadow: -10px 0 40px rgba(0,0,0,0.45); backdrop-filter: blur(14px);
+  }
+  #panel.hidden { margin-right: -372px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; padding: 3px 11px; border-radius: 999px; margin-bottom: 14px; }
+  .badge.collab { background: rgba(255,184,77,0.14); color: var(--collab); border: 1px solid rgba(255,184,77,0.45); }
+  .badge.owner { background: rgba(78,224,192,0.13); color: var(--owner); border: 1px solid rgba(78,224,192,0.45); }
+  .badge.mfr { background: rgba(125,180,255,0.14); color: var(--accent); border: 1px solid rgba(125,180,255,0.45); }
+  #panel h2 { margin: 0 0 6px; font-size: 22px; line-height: 1.25; }
+  #panel .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+  .field { margin-bottom: 18px; }
+  .field .label { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin-bottom: 6px; }
+  .field .value { font-size: 15px; }
+  .mfr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mfr-chip { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 13px; }
+  .detail-body { font-size: 14px; line-height: 1.62; color: #d4dcef; }
+  #panel .hint { color: var(--muted); font-size: 14px; line-height: 1.62; margin-top: 28px; }
+  .close-x { float: right; cursor: pointer; color: var(--muted); font-size: 22px; line-height: 1; }
+  .close-x:hover { color: var(--text); }
+  .stat-row { display: flex; gap: 22px; margin: 8px 0 4px; }
+  .stat b { color: var(--text); font-size: 18px; display: block; text-shadow: 0 0 12px rgba(125,180,255,0.4); }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .rel-list { list-style: none; padding: 0; margin: 0; }
+  .rel-list li { margin: 7px 0; cursor: pointer; color: #d4dcef; transition: color .12s; font-size: 14px; }
+  .rel-list li:hover { color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="starfield"></canvas>
+<div id="app">
+  <div id="graph-wrap">
+    <div id="header">
+      <h1>Car Constellations</h1>
+      <p>Manufacturers are stars; the models they built together are the planets between them. Click anything to read its story.</p>
+    </div>
+
+    <div id="controls">
+      <input id="search" type="text" placeholder="Find a manufacturer…" autocomplete="off" />
+      <div class="ctl-row">
+        <button class="btn active" data-filter="all">All</button>
+        <button class="btn" data-filter="collab">Collaborations</button>
+        <button class="btn" data-filter="owner">Ownership</button>
+      </div>
+      <div class="ctl-row">
+        <button class="btn" id="toggleNames">Hide model names</button>
+        <button class="btn" id="fit">Reset</button>
+        <button class="btn" id="physics">Pause drift</button>
+      </div>
+    </div>
+
+    <div id="legend">
+      <div class="lg-title">Legend</div>
+      <div class="lg-item"><span class="lg-star" style="background:#e2342f; box-shadow:0 0 10px #e2342f"></span> Manufacturer (star)</div>
+      <div class="lg-item"><span class="lg-planet"></span> Shared model (planet)</div>
+      <div class="lg-item"><span class="lg-line" style="border-color:var(--collab)"></span> Collaboration</div>
+      <div class="lg-item"><span class="lg-line" style="border-color:var(--owner)"></span> Ownership tie</div>
+      <div class="lg-item"><span class="lg-line" style="border-top-style:dashed; border-color:var(--muted)"></span> Former (ended)</div>
+      <div class="lg-item" style="font-size:11px; margin-top:7px;">Drag stars • scroll to zoom • click a node or line</div>
+    </div>
+
+    <div id="network"></div>
+  </div>
+
+  <div id="panel" class="hidden"><div id="panel-content"></div></div>
+</div>
+
+<script>
+/* ============================================================
+   STARFIELD (twinkling galaxy background)
+   ============================================================ */
+(function () {
+  const sky = document.getElementById("starfield");
+  const ctx = sky.getContext("2d");
+  let stars = [], shoot = null, w = 0, h = 0;
+  const palette = ["#ffffff", "#cfe0ff", "#ffe6c2", "#d9c2ff"];
+  function init() {
+    w = sky.width = innerWidth; h = sky.height = innerHeight;
+    const n = Math.min(320, Math.floor(w * h / 7000));
+    stars = [];
+    for (let i = 0; i < n; i++) stars.push({
+      x: Math.random() * w, y: Math.random() * h,
+      r: Math.random() * 1.5 + 0.2, base: Math.random() * 0.5 + 0.25,
+      ph: Math.random() * Math.PI * 2, sp: Math.random() * 0.0016 + 0.0004,
+      c: palette[(Math.random() * palette.length) | 0]
+    });
+  }
+  function maybeShoot() {
+    if (shoot || Math.random() > 0.004) return;
+    shoot = { x: Math.random() * w * 0.6, y: Math.random() * h * 0.4, len: 0, max: 120 + Math.random() * 160, a: 1 };
+  }
+  function loop(t) {
+    ctx.clearRect(0, 0, w, h);
+    for (const s of stars) {
+      const a = s.base + Math.sin(t * s.sp + s.ph) * 0.35;
+      ctx.globalAlpha = Math.max(0, Math.min(1, a));
+      ctx.fillStyle = s.c;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.283); ctx.fill();
+    }
+    maybeShoot();
+    if (shoot) {
+      shoot.len += 9; shoot.a -= 0.012;
+      const dx = shoot.len, dy = shoot.len * 0.5;
+      const g = ctx.createLinearGradient(shoot.x, shoot.y, shoot.x + dx, shoot.y + dy);
+      g.addColorStop(0, "rgba(255,255,255,0)");
+      g.addColorStop(1, "rgba(255,255,255," + Math.max(0, shoot.a) + ")");
+      ctx.globalAlpha = 1; ctx.strokeStyle = g; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(shoot.x, shoot.y); ctx.lineTo(shoot.x + dx, shoot.y + dy); ctx.stroke();
+      if (shoot.len > shoot.max || shoot.a <= 0) shoot = null;
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(loop);
+  }
+  init(); requestAnimationFrame(loop);
+  addEventListener("resize", init);
+})();
+
+/* ============================================================
+   DATA
+   ============================================================ */
+const GROUPS = {
+  toyota:   { label: "Toyota Group",        color: "#ff5a52" },
+  vw:       { label: "Volkswagen Group",    color: "#5a8cff" },
+  stellantis:{ label: "Stellantis",         color: "#9d86ff" },
+  geely:    { label: "Geely",               color: "#2fd6c8" },
+  tata:     { label: "Tata (JLR)",          color: "#5bd16a" },
+  gm:       { label: "General Motors",      color: "#ffc847" },
+  rnm:      { label: "Renault–Nissan–Mitsubishi", color: "#ff7b6b" },
+  hyundai:  { label: "Hyundai Motor Group", color: "#3bc6ff" },
+  ford:     { label: "Ford",                color: "#4d79e0" },
+  honda:    { label: "Honda",               color: "#ff6a6a" },
+  bmw:      { label: "BMW Group",           color: "#8ec3ff" },
+  daimler:  { label: "Mercedes-Benz Group", color: "#c6d2e0" },
+  indep:    { label: "Independent",         color: "#b7c2db" }
+};
+
+const MANUFACTURERS = {
+  "Toyota": "toyota", "Lexus": "toyota", "Subaru": "toyota", "Daihatsu": "toyota",
+  "Volkswagen": "vw", "Audi": "vw", "Porsche": "vw", "Lamborghini": "vw",
+  "Bentley": "vw", "Bugatti": "vw", "SEAT": "vw", "Škoda": "vw",
+  "Fiat": "stellantis", "Chrysler": "stellantis", "Jeep": "stellantis",
+  "Dodge": "stellantis", "Peugeot": "stellantis", "Citroën": "stellantis",
+  "Alfa Romeo": "stellantis", "Maserati": "stellantis", "Opel": "stellantis", "Vauxhall": "stellantis",
+  "Geely": "geely", "Volvo": "geely", "Lotus": "geely", "Polestar": "geely",
+  "Tata": "tata", "Jaguar": "tata", "Land Rover": "tata",
+  "GM": "gm", "Chevrolet": "gm", "Cadillac": "gm", "Pontiac": "gm", "Saab": "gm",
+  "Renault": "rnm", "Nissan": "rnm", "Infiniti": "rnm", "Mitsubishi": "rnm",
+  "Hyundai": "hyundai", "Kia": "hyundai", "Genesis": "hyundai",
+  "Ford": "ford", "Mercury": "ford", "Lincoln": "ford",
+  "Honda": "honda", "Acura": "honda",
+  "BMW": "bmw", "Mini": "bmw", "Rolls-Royce": "bmw",
+  "Mercedes-Benz": "daimler", "AMG": "daimler",
+  "McLaren": "indep", "Aston Martin": "indep", "Mazda": "indep", "Tesla": "indep", "Shelby": "indep", "Isuzu": "indep"
+};
+
+/* type: "collab" | "owner"  ·  status: "current" | "former"
+   collab entries get a "short" used as the planet's label */
+const CONNECTIONS = [
+  { from:"Toyota", to:"BMW", type:"collab", status:"current", year:"2019–present", short:"Supra / Z4",
+    model:"Toyota GR Supra (A90) & BMW Z4 (G29)", title:"Toyota Supra × BMW Z4",
+    details:"Toyota wanted a new Supra but had no straight-six platform; BMW wanted a roadster. They co-developed one chassis built at Magna Steyr in Austria. The Supra uses BMW's B58/B48 engines, ZF transmission and much of the Z4's hardware, retuned by Toyota for a stiffer coupe character." },
+  { from:"Toyota", to:"Subaru", type:"collab", status:"current", year:"2012–present", short:"GR86 / BRZ",
+    model:"Toyota GR86 / Scion FR-S & Subaru BRZ", title:"Toyota 86 × Subaru BRZ",
+    details:"A lightweight rear-drive coupe jointly engineered by both firms. Subaru supplies its flat-four 'boxer' engine and builds the cars; Toyota led much of the design and the D-4S injection. Toyota also holds a ~20% stake in Subaru, anchoring the partnership." },
+  { from:"Toyota", to:"Subaru", type:"collab", status:"current", year:"2022–present", short:"bZ4X / Solterra",
+    model:"Toyota bZ4X & Subaru Solterra", title:"bZ4X × Solterra (EV)",
+    details:"The two extended their alliance to electric cars, co-developing the e-TNGA based bZ4X / Solterra crossovers — Toyota leading software and packaging, Subaru contributing all-wheel-drive expertise." },
+  { from:"GM", to:"Toyota", type:"collab", status:"former", year:"1984–2010", short:"Vibe / Matrix",
+    model:"Pontiac Vibe & Toyota Matrix (NUMMI)", title:"NUMMI joint venture",
+    details:"New United Motor Manufacturing Inc. (NUMMI) in Fremont, California was a 50/50 GM–Toyota plant. It let GM learn the Toyota Production System and Toyota learn to build in the US. Twins like the Pontiac Vibe / Toyota Matrix rolled out side by side. The plant later became Tesla's factory." },
+  { from:"Mercedes-Benz", to:"Infiniti", type:"collab", status:"former", year:"2016–2019", short:"Infiniti Q30",
+    model:"Infiniti Q30 / QX30", title:"Infiniti Q30 on a Mercedes platform",
+    details:"Under the Daimler–Renault-Nissan cooperation, Infiniti's Q30 hatch was built on the Mercedes MFA platform that underpins the A-Class and GLA, using Mercedes engines and transmissions, assembled in Sunderland, England." },
+  { from:"McLaren", to:"Mercedes-Benz", type:"collab", status:"former", year:"2003–2010", short:"SLR McLaren",
+    model:"Mercedes-Benz SLR McLaren", title:"Mercedes-Benz SLR McLaren",
+    details:"A supercar born from the Mercedes–McLaren Formula 1 partnership. Mercedes-AMG supplied a supercharged 5.4L V8; McLaren engineered and hand-built the carbon-fibre car in Woking, England." },
+  { from:"Aston Martin", to:"Mercedes-Benz", type:"collab", status:"current", year:"2013–present", short:"DB11 · Vantage",
+    model:"DB11, Vantage, DBX (AMG V8)", title:"Aston Martin × Mercedes-AMG",
+    details:"Mercedes-Benz took an equity stake in Aston Martin and supplies AMG's twin-turbo V8 engines plus electronics and infotainment. The Vantage, DB11/DB12 and DBX all run AMG-derived powertrains tuned by Aston." },
+  { from:"Ford", to:"Mazda", type:"collab", status:"former", year:"1979–2015", short:"B-series · Probe",
+    model:"Mazda B-series / Ford Courier & Ranger; Ford Probe; Mazda6 / Ford Fusion", title:"Ford × Mazda",
+    details:"Ford held a controlling ~33% stake in Mazda for decades. The two shared enormous amounts of engineering: the Mazda B-series pickup and Ford Courier/Ranger, the Ford Probe (built on the MX-6), the Escape/Tribute SUVs and the CD3 platform behind the Mazda6 and Ford Fusion. Ford has since divested its Mazda holding." },
+  { from:"Ford", to:"Volkswagen", type:"collab", status:"current", year:"2019–present", short:"Ranger / Amarok",
+    model:"Ford Ranger / VW Amarok; Ford EVs on MEB", title:"Ford × Volkswagen Alliance",
+    details:"A global alliance: VW's Amarok pickup is built on Ford's Ranger platform, Ford builds vans for VW, and Ford uses VW's MEB electric architecture for European EVs. Each side fills gaps in the other's lineup." },
+  { from:"Toyota", to:"Mazda", type:"collab", status:"current", year:"2015–present", short:"Yaris iA · MTM",
+    model:"Toyota Yaris iA / Scion iA (Mazda2) & Huntsville plant", title:"Toyota × Mazda",
+    details:"Toyota holds a small stake in Mazda. Mazda built the Scion/Toyota Yaris iA (a rebadged Mazda2 sedan), and the two jointly run Mazda Toyota Manufacturing in Huntsville, Alabama, sharing EV and safety tech." },
+  { from:"Lotus", to:"Vauxhall", type:"collab", status:"former", year:"1990–1992", short:"Lotus Carlton",
+    model:"Lotus Carlton / Lotus Omega", title:"Lotus Carlton",
+    details:"When GM owned Lotus, Lotus took the humble Vauxhall Carlton / Opel Omega and turned it into a 177 mph super-saloon with a twin-turbo 3.6L straight-six — for a time the fastest four-door in the world." },
+  { from:"Lotus", to:"Toyota", type:"collab", status:"former", year:"2004–2011", short:"Elise (Toyota)",
+    model:"Lotus Elise / Exige (Toyota engine)", title:"Lotus Elise × Toyota power",
+    details:"Lightweight Lotus needed reliable, emissions-friendly power. The Elise and Exige adopted Toyota's high-revving 1.8L 2ZZ-GE four (the Celica/Corolla engine family), keeping the cars light and dependable." },
+  { from:"Tesla", to:"Lotus", type:"collab", status:"former", year:"2008–2012", short:"Tesla Roadster",
+    model:"Tesla Roadster (Gen 1)", title:"Tesla Roadster on a Lotus chassis",
+    details:"Tesla's first car was built around a heavily modified Lotus Elise platform, assembled by Lotus in Hethel, England, with Tesla adding its electric powertrain and battery pack — the launchpad for the whole company." },
+  { from:"Fiat", to:"Mazda", type:"collab", status:"current", year:"2016–present", short:"124 Spider",
+    model:"Fiat 124 Spider (on Mazda MX-5)", title:"Fiat 124 Spider × Mazda MX-5",
+    details:"Fiat revived the 124 Spider by building it on the fourth-gen Mazda MX-5 (ND) at Mazda's Hiroshima plant, fitting its own turbocharged 1.4L engine and styling for an Italian take on the roadster." },
+  { from:"Toyota", to:"Peugeot", type:"collab", status:"former", year:"2005–2021", short:"Aygo / 107 / C1",
+    model:"Toyota Aygo / Peugeot 107 / Citroën C1 (TPCA)", title:"Toyota × PSA city cars",
+    details:"Toyota and PSA jointly built three near-identical city cars — the Aygo, 107 and C1 — at the TPCA plant in Kolín, Czech Republic, splitting the cost of a low-margin segment." },
+  { from:"BMW", to:"Peugeot", type:"collab", status:"former", year:"2006–2014", short:"'Prince' engine",
+    model:"BMW Mini / Peugeot 207 'Prince' engine", title:"BMW × PSA 'Prince' engines",
+    details:"BMW and PSA co-developed the 'Prince' family of small turbo petrol fours, used in the Mini Cooper/Cooper S and in Peugeot/Citroën models like the 207 and DS3 — a rare cross-rival engine program." },
+  { from:"Honda", to:"GM", type:"collab", status:"current", year:"2013–present", short:"Prologue (Ultium)",
+    model:"Honda Prologue & shared EV / fuel-cell tech", title:"Honda × GM (EV & hydrogen)",
+    details:"Honda and GM co-developed fuel-cell systems and EVs; the Honda Prologue and Acura ZDX ride on GM's Ultium battery platform, while the two also explored a broader affordable-EV partnership." },
+  { from:"Nissan", to:"Mercury", type:"collab", status:"former", year:"1992–2002", short:"Quest / Villager",
+    model:"Nissan Quest / Mercury Villager", title:"Nissan × Ford minivan",
+    details:"Before the Renault era, Nissan partnered with Ford to build a minivan: the Nissan Quest and Mercury Villager were twins, designed by Nissan and assembled by Ford in Ohio." },
+  { from:"Shelby", to:"Ford", type:"collab", status:"current", year:"1962–present", short:"Cobra · GT500",
+    model:"Shelby Cobra, GT350, GT500", title:"Carroll Shelby × Ford",
+    details:"Carroll Shelby's tuning house turned Ford's Mustang into the GT350 and GT500 and built the Cobra by stuffing Ford V8s into AC roadsters. The Shelby name remains Ford's high-performance halo for the Mustang." },
+  { from:"Shelby", to:"Dodge", type:"collab", status:"former", year:"1983–1989", short:"Shelby Charger",
+    model:"Shelby Charger, GLHS, Dodge Viper input", title:"Carroll Shelby × Dodge",
+    details:"After his Ford years, Shelby worked with Lee Iacocca at Chrysler, hotting up front-drive Dodges (Shelby Charger, Omni GLHS) and consulting on the original V10 Dodge Viper." },
+  { from:"Porsche", to:"Volkswagen", type:"collab", status:"current", year:"2002–present", short:"Cayenne / Touareg",
+    model:"Porsche Cayenne / VW Touareg / Audi Q7", title:"Porsche × VW × Audi SUV platform",
+    details:"The first Porsche Cayenne shared its platform and much hardware with the VW Touareg and Audi Q7 — a co-development that funded Porsche's expansion. (Porsche and VW are now both inside the Volkswagen Group.)" },
+
+  // ---- Ownership ----
+  { from:"Volkswagen", to:"Audi", type:"owner", status:"current", year:"1966–present", model:"—", title:"Volkswagen owns Audi",
+    details:"Audi is a wholly-owned subsidiary of Volkswagen Group and acts as its technical and premium spearhead, sharing platforms (MQB, MLB, PPE) across the group." },
+  { from:"Volkswagen", to:"Porsche", type:"owner", status:"current", year:"2012–present", model:"—", title:"Volkswagen owns Porsche",
+    details:"After decades of family and platform ties, VW Group acquired Porsche's car business in 2012. The Porsche and Piëch families in turn control VW — an unusually circular ownership structure." },
+  { from:"Volkswagen", to:"Lamborghini", type:"owner", status:"current", year:"1998–present", model:"—", title:"Volkswagen owns Lamborghini",
+    details:"Lamborghini sits under Audi within VW Group; the Huracán shares its V10 and platform with the Audi R8, and the Urus SUV is built on group hardware." },
+  { from:"Volkswagen", to:"Bentley", type:"owner", status:"current", year:"1998–present", model:"—", title:"Volkswagen owns Bentley",
+    details:"VW bought Bentley in 1998. Bentleys share group W12 engines and platforms (e.g. the Continental with the Porsche Panamera)." },
+  { from:"Volkswagen", to:"Bugatti", type:"owner", status:"former", year:"1998–2021", model:"—", title:"Volkswagen owned Bugatti",
+    details:"VW revived Bugatti and built the Veyron and Chiron. In 2021 it moved Bugatti into a joint venture (Bugatti-Rimac) majority-owned by Croatia's Rimac, with Porsche as a shareholder." },
+  { from:"Volkswagen", to:"SEAT", type:"owner", status:"current", year:"1986–present", model:"—", title:"Volkswagen owns SEAT",
+    details:"Spain's SEAT (and its Cupra performance brand) is part of VW Group, building sporty versions of shared platforms." },
+  { from:"Volkswagen", to:"Škoda", type:"owner", status:"current", year:"1991–present", model:"—", title:"Volkswagen owns Škoda",
+    details:"Czech maker Škoda joined VW Group in 1991 and became its value brand, known for spacious, practical takes on group platforms." },
+  { from:"Tata", to:"Jaguar", type:"owner", status:"current", year:"2008–present", model:"—", title:"Tata owns Jaguar",
+    details:"India's Tata Motors bought Jaguar Land Rover from Ford in 2008 and has funded a major revival, including JLR's shift toward electrification." },
+  { from:"Tata", to:"Land Rover", type:"owner", status:"current", year:"2008–present", model:"—", title:"Tata owns Land Rover",
+    details:"Land Rover is the other half of Jaguar Land Rover, owned by Tata Motors since 2008 and now the group's profit engine with Range Rover." },
+  { from:"Geely", to:"Volvo", type:"owner", status:"current", year:"2010–present", model:"—", title:"Geely owns Volvo",
+    details:"China's Geely bought Volvo Cars from Ford in 2010 and gave it autonomy plus investment, leading to the SPA/CMA platforms and a strong EV push." },
+  { from:"Geely", to:"Polestar", type:"owner", status:"current", year:"2017–present", model:"—", title:"Geely & Volvo own Polestar",
+    details:"Polestar, once Volvo's performance tuner, was spun off into a standalone EV brand owned jointly by Volvo and Geely." },
+  { from:"Geely", to:"Lotus", type:"owner", status:"current", year:"2017–present", model:"—", title:"Geely owns Lotus",
+    details:"Geely took a controlling stake in Lotus in 2017, bankrolling new models like the electric Eletre SUV and Emeya, and reviving the brand globally." },
+  { from:"GM", to:"Chevrolet", type:"owner", status:"current", year:"1918–present", model:"—", title:"GM owns Chevrolet",
+    details:"Chevrolet is GM's high-volume global brand, spanning everything from the Spark to the Corvette and Silverado." },
+  { from:"GM", to:"Cadillac", type:"owner", status:"current", year:"1909–present", model:"—", title:"GM owns Cadillac",
+    details:"Cadillac is GM's luxury division, one of the oldest American car brands and now central to GM's premium EV strategy (Lyriq, Celestiq)." },
+  { from:"GM", to:"Pontiac", type:"owner", status:"former", year:"1926–2010", model:"—", title:"GM owned Pontiac",
+    details:"Pontiac was GM's 'excitement' brand (GTO, Firebird, Vibe) until GM shut it down during its 2009–2010 bankruptcy restructuring." },
+  { from:"GM", to:"Saab", type:"owner", status:"former", year:"1989–2010", model:"—", title:"GM owned Saab",
+    details:"GM bought Sweden's Saab and based later models (9-3, 9-5) on Opel/GM platforms. GM sold it in 2010 and Saab's car business soon collapsed." },
+  { from:"GM", to:"Opel", type:"owner", status:"former", year:"1929–2017", model:"—", title:"GM owned Opel / Vauxhall",
+    details:"GM owned Germany's Opel and Britain's Vauxhall for decades, using them as its European arm, before selling both to PSA (now Stellantis) in 2017." },
+  { from:"Renault", to:"Nissan", type:"owner", status:"current", year:"1999–present", model:"—", title:"Renault–Nissan alliance",
+    details:"Renault rescued Nissan in 1999 and the two formed a cross-shareholding alliance (later joined by Mitsubishi) that shares platforms, engines and EV tech like the Leaf/Zoe lineage." },
+  { from:"Nissan", to:"Infiniti", type:"owner", status:"current", year:"1989–present", model:"—", title:"Nissan owns Infiniti",
+    details:"Infiniti is Nissan's luxury brand, launched in 1989 for North America and built largely on shared Nissan platforms." },
+  { from:"Nissan", to:"Mitsubishi", type:"owner", status:"current", year:"2016–present", model:"—", title:"Nissan controls Mitsubishi",
+    details:"Nissan took a controlling stake in Mitsubishi Motors in 2016, folding it into the Renault–Nissan–Mitsubishi alliance for shared kei-car and plug-in hybrid tech." },
+  { from:"Hyundai", to:"Kia", type:"owner", status:"current", year:"1998–present", model:"—", title:"Hyundai owns Kia",
+    details:"Hyundai rescued Kia in 1998; they now share platforms and the E-GMP EV architecture (Ioniq 5 / EV6) while keeping distinct design identities." },
+  { from:"Hyundai", to:"Genesis", type:"owner", status:"current", year:"2015–present", model:"—", title:"Hyundai owns Genesis",
+    details:"Genesis is Hyundai Motor Group's luxury marque, spun off in 2015 to rival the German premium brands with shared rear-drive and EV platforms." },
+  { from:"Honda", to:"Acura", type:"owner", status:"current", year:"1986–present", model:"—", title:"Honda owns Acura",
+    details:"Acura is Honda's premium brand, launched in 1986 — the first Japanese luxury marque in North America (Legend, NSX, Integra)." },
+  { from:"BMW", to:"Mini", type:"owner", status:"current", year:"2000–present", model:"—", title:"BMW owns Mini",
+    details:"BMW kept Mini after breaking up the Rover Group, relaunching it in 2001 as a premium small-car brand on BMW-derived hardware." },
+  { from:"BMW", to:"Rolls-Royce", type:"owner", status:"current", year:"2003–present", model:"—", title:"BMW owns Rolls-Royce",
+    details:"Through a famous split with VW over the Rolls-Royce name and Bentley factory, BMW secured the Rolls-Royce car brand and supplies its V12 power." },
+  { from:"Mercedes-Benz", to:"AMG", type:"owner", status:"current", year:"1999–present", model:"—", title:"Mercedes owns AMG",
+    details:"Once an independent tuner, AMG was fully absorbed by Mercedes-Benz and is now its in-house performance division, hand-building engines in Affalterbach." },
+  { from:"Toyota", to:"Lexus", type:"owner", status:"current", year:"1989–present", model:"—", title:"Toyota owns Lexus",
+    details:"Lexus is Toyota's luxury brand, launched in 1989 with the LS400 and built on shared Toyota platforms with a focus on refinement and hybrids." },
+  { from:"Toyota", to:"Daihatsu", type:"owner", status:"current", year:"1998–present", model:"—", title:"Toyota owns Daihatsu",
+    details:"Toyota fully owns Daihatsu, its small-car and kei-car specialist, which develops compact models for emerging markets." },
+  { from:"Stellantis", to:"Fiat", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Fiat",
+    details:"Fiat is a founding brand of Stellantis, the 2021 merger of Fiat Chrysler Automobiles (FCA) and France's PSA Group." },
+  { from:"Stellantis", to:"Chrysler", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Chrysler",
+    details:"Chrysler came into Stellantis via FCA. Its own history runs through DaimlerChrysler (1998–2007) and Fiat's 2009 rescue." },
+  { from:"Stellantis", to:"Jeep", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Jeep",
+    details:"Jeep, one of the most valuable brands in the group, sits under Stellantis after passing through AMC, Chrysler and FCA ownership." },
+  { from:"Stellantis", to:"Peugeot", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Peugeot",
+    details:"Peugeot came from the PSA side of the merger and shares the group's EMP2 and STLA platforms across many brands." },
+  { from:"Stellantis", to:"Citroën", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Citroën",
+    details:"Citroën, long paired with Peugeot under PSA, is now a value-and-comfort brand within Stellantis." },
+  { from:"Stellantis", to:"Alfa Romeo", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Alfa Romeo",
+    details:"Alfa Romeo entered Stellantis through FCA and is being repositioned as a premium-sport brand on group platforms." },
+  { from:"Stellantis", to:"Maserati", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Maserati",
+    details:"Maserati is Stellantis's luxury-performance brand, building the MC20 supercar and Grecale SUV." },
+  { from:"Stellantis", to:"Dodge", type:"owner", status:"current", year:"2021–present", model:"—", title:"Stellantis owns Dodge",
+    details:"Dodge, the American muscle brand (Charger, Challenger), sits under Stellantis after its FCA/Chrysler lineage." },
+  { from:"Stellantis", to:"Opel", type:"owner", status:"current", year:"2017–present", model:"—", title:"Stellantis owns Opel / Vauxhall",
+    details:"PSA bought Opel and Vauxhall from GM in 2017; both are now Stellantis brands sharing its platforms across Europe and the UK." },
+  { from:"Ford", to:"Aston Martin", type:"owner", status:"former", year:"1987–2007", model:"—", title:"Ford owned Aston Martin",
+    details:"Ford controlled Aston Martin and funded the DB7, DB9 and V8 Vantage, sharing some Jaguar/Ford-era engineering, before selling it to a private consortium in 2007." },
+  { from:"Ford", to:"Jaguar", type:"owner", status:"former", year:"1989–2008", model:"—", title:"Ford owned Jaguar",
+    details:"Jaguar was part of Ford's Premier Automotive Group; Ford-era platforms underpinned cars like the X-Type before Ford sold Jaguar (with Land Rover) to Tata in 2008." },
+  { from:"Ford", to:"Volvo", type:"owner", status:"former", year:"1999–2010", model:"—", title:"Ford owned Volvo",
+    details:"Ford owned Volvo Cars for a decade, sharing platforms (e.g. the EUCD architecture behind the Mondeo, S-MAX and Volvo S80) before selling it to Geely in 2010." },
+  { from:"Ford", to:"Land Rover", type:"owner", status:"former", year:"2000–2008", model:"—", title:"Ford owned Land Rover",
+    details:"Ford bought Land Rover from BMW in 2000 and ran it alongside Jaguar before selling both to Tata Motors in 2008." }
+];
+
+/* ============================================================
+   BUILD NODES & EDGES
+   ============================================================ */
+function hexToRgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n>>16)&255}, ${(n>>8)&255}, ${n&255}, ${a})`;
+}
+
+// degree per manufacturer (drives star size/brightness)
+const degree = {};
+CONNECTIONS.forEach(c => { degree[c.from] = (degree[c.from]||0)+1; degree[c.to] = (degree[c.to]||0)+1; });
+
+const mfrSet = new Set();
+CONNECTIONS.forEach(c => { mfrSet.add(c.from); mfrSet.add(c.to); });
+
+const nodeArr = [];
+[...mfrSet].forEach(name => {
+  const g = MANUFACTURERS[name] || "indep";
+  const color = GROUPS[g].color;
+  nodeArr.push({
+    id: name, label: name, kind: "mfr", value: degree[name] || 1,
+    shape: "dot",
+    color: { background: color, border: "rgba(255,255,255,0.55)",
+             highlight: { background: color, border: "#ffffff" } },
+    font: { color: "#f3f6ff", size: 15, strokeWidth: 3, strokeColor: "rgba(0,0,0,0.85)" },
+    shadow: { enabled: true, color: hexToRgba(color, 0.85), size: 26, x: 0, y: 0 },
+    borderWidth: 1.5
+  });
+});
+
+const edgeArr = [];
+let modelLabelsVisible = true;
+CONNECTIONS.forEach((c, i) => {
+  if (c.type === "collab") {
+    const mid = "m" + i;
+    nodeArr.push({
+      id: mid, label: c.short, kind: "model", _idx: i,
+      shape: "dot", size: 7,
+      color: { background: "#ffe6ad", border: "rgba(255,255,255,0.7)",
+               highlight: { background: "#fff3d6", border: "#ffffff" } },
+      font: { color: "#f0cf8e", size: 11, strokeWidth: 3, strokeColor: "rgba(0,0,0,0.8)" },
+      shadow: { enabled: true, color: "rgba(255,206,122,0.85)", size: 16, x: 0, y: 0 },
+      borderWidth: 1
+    });
+    edgeArr.push({ id: "e"+i+"a", from: c.from, to: mid, _idx: i, _kind: "collab", _status: c.status });
+    edgeArr.push({ id: "e"+i+"b", from: mid, to: c.to, _idx: i, _kind: "collab", _status: c.status });
+  } else {
+    edgeArr.push({ id: "e"+i, from: c.from, to: c.to, _idx: i, _kind: "owner", _status: c.status });
+  }
+});
+
+function edgeStyle(e, on) {
+  const collab = e._kind === "collab";
+  const base = collab ? "#ffb84d" : "#4ee0c0";
+  return {
+    id: e.id,
+    color: { color: base, opacity: on ? (collab ? 0.8 : 0.65) : 0.05, highlight: "#ffffff", hover: "#ffffff" },
+    width: on ? (collab ? 2.4 : 2.0) : (collab ? 1.5 : 1.3),
+    dashes: e._status === "former" ? [6, 6] : false,
+    shadow: { enabled: on, color: base, size: on ? 12 : 0, x: 0, y: 0 },
+    smooth: { enabled: true, type: "continuous", roundness: 0.4 }
+  };
+}
+edgeArr.forEach(e => Object.assign(e, edgeStyle(e, true)));
+
+const nodes = new vis.DataSet(nodeArr);
+const edges = new vis.DataSet(edgeArr);
+
+/* ============================================================
+   NETWORK
+   ============================================================ */
+const options = {
+  physics: {
+    solver: "barnesHut",
+    barnesHut: { gravitationalConstant: -9500, springLength: 120, springConstant: 0.025, damping: 0.45, avoidOverlap: 0.25 },
+    stabilization: { iterations: 280 }
+  },
+  interaction: { hover: true, tooltipDelay: 150, navigationButtons: false, keyboard: false },
+  nodes: {
+    borderWidth: 1.5,
+    scaling: { min: 12, max: 40, label: { enabled: false } }
+  },
+  edges: { selectionWidth: 0, hoverWidth: 0 }
+};
+const network = new vis.Network(document.getElementById("network"), { nodes, edges }, options);
+
+network.once("stabilizationIterationsDone", () => {
+  network.setOptions({ physics: { stabilization: false } });
+  network.fit({ animation: { duration: 700 } });
+});
+
+/* ============================================================
+   PANEL
+   ============================================================ */
+const panel = document.getElementById("panel");
+const panelContent = document.getElementById("panel-content");
+
+function showWelcome() {
+  const collabCount = CONNECTIONS.filter(c => c.type === "collab").length;
+  panelContent.innerHTML = `
+    <h2>Explore the galaxy</h2>
+    <div class="stat-row">
+      <div class="stat"><b>${mfrSet.size}</b><span>manufacturers</span></div>
+      <div class="stat"><b>${collabCount}</b><span>shared models</span></div>
+      <div class="stat"><b>${CONNECTIONS.length}</b><span>connections</span></div>
+    </div>
+    <p class="hint">
+      Each <b style="color:#ffe6ad">★ star</b> is a car maker — brighter and bigger the more ties it has.<br><br>
+      Each <b style="color:#ffe6ad">• planet</b> is a model two makers built together; it sits on the line between its two stars.<br><br>
+      <span style="color:var(--collab)">Gold</span> lines are <b>collaborations</b>; <span style="color:var(--owner)">teal</span> lines are <b>ownership</b>. <b>Dashed</b> means the relationship has ended.<br><br>
+      Click a planet or line for the story, or click a star to spotlight its whole constellation.
+    </p>`;
+  panel.classList.remove("hidden");
+}
+
+function showConnection(idx) {
+  const m = CONNECTIONS[idx];
+  const isCollab = m.type === "collab";
+  panelContent.innerHTML = `
+    <span class="close-x" onclick="window._closePanel()">×</span>
+    <span class="badge ${isCollab ? "collab" : "owner"}">${isCollab ? "Collaboration" : "Ownership"}${m.status === "former" ? " · former" : ""}</span>
+    <h2>${m.title}</h2>
+    <div class="sub">${m.year}</div>
+    <div class="field">
+      <div class="label">Manufacturers</div>
+      <div class="mfr-chips"><span class="mfr-chip">${m.from}</span><span class="mfr-chip">${m.to}</span></div>
+    </div>
+    ${m.model && m.model !== "—" ? `<div class="field"><div class="label">Model${/[&/]/.test(m.model) ? "s" : ""}</div><div class="value">${m.model}</div></div>` : ""}
+    <div class="field"><div class="label">The story</div><div class="detail-body">${m.details}</div></div>`;
+  panel.classList.remove("hidden");
+}
+
+function showNodeSummary(id) {
+  const eids = network.getConnectedEdges(id);
+  const idxs = [...new Set(eids.map(eid => edges.get(eid)._idx))];
+  const rels = idxs.map(i => ({ i, c: CONNECTIONS[i] }));
+  const collabs = rels.filter(r => r.c.type === "collab");
+  const owns = rels.filter(r => r.c.type === "owner");
+  const li = r => `<li onclick="window._openConn(${r.i})"><span style="color:${r.c.type==='collab'?'var(--collab)':'var(--owner)'}">●</span> ${r.c.title}</li>`;
+  panelContent.innerHTML = `
+    <span class="close-x" onclick="window._closePanel()">×</span>
+    <span class="badge mfr">Manufacturer</span>
+    <h2>${id}</h2>
+    <div class="sub">${GROUPS[MANUFACTURERS[id]||'indep'].label} · ${rels.length} connection${rels.length!==1?'s':''}</div>
+    ${collabs.length ? `<div class="field"><div class="label">Built models with</div><ul class="rel-list">${collabs.map(li).join("")}</ul></div>` : ""}
+    ${owns.length ? `<div class="field"><div class="label">Ownership ties</div><ul class="rel-list">${owns.map(li).join("")}</ul></div>` : ""}
+    <p class="hint" style="font-size:13px;">Click any item above, or a planet/line in the map, for the full story.</p>`;
+  panel.classList.remove("hidden");
+}
+
+window._closePanel = () => { panel.classList.add("hidden"); network.unselectAll(); resetHighlight(); };
+window._openConn = idx => { highlightConnection(idx); showConnection(idx); };
+
+/* ============================================================
+   HIGHLIGHTING
+   ============================================================ */
+function applyHighlight(activeEdgeIds) {
+  const activeSet = new Set(activeEdgeIds.map(String));
+  const all = edges.get();
+  edges.update(all.map(e => {
+    if (e.hidden) return { id: e.id };
+    return edgeStyle(e, activeSet.size === 0 ? true : activeSet.has(String(e.id)));
+  }));
+  const keep = new Set();
+  activeEdgeIds.forEach(id => { const e = edges.get(id); if (e) { keep.add(e.from); keep.add(e.to); } });
+  nodes.update(nodes.get().map(n => ({ id: n.id, opacity: (activeEdgeIds.length === 0 || keep.has(n.id)) ? 1 : 0.16 })));
+}
+function highlightConnection(idx) {
+  applyHighlight(edges.get().filter(e => e._idx === idx).map(e => e.id));
+}
+function highlightForNode(id) {
+  let active = network.getConnectedEdges(id);
+  network.getConnectedNodes(id).forEach(n => {
+    if ((nodes.get(n)||{}).kind === "model")
+      network.getConnectedEdges(n).forEach(eid => { if (!active.includes(eid)) active.push(eid); });
+  });
+  applyHighlight(active);
+}
+function resetHighlight() { applyHighlight([]); }
+
+/* ============================================================
+   INTERACTIONS
+   ============================================================ */
+network.on("click", params => {
+  if (params.nodes.length) {
+    const id = params.nodes[0];
+    const node = nodes.get(id);
+    if (node.kind === "model") { highlightConnection(node._idx); showConnection(node._idx); }
+    else { highlightForNode(id); showNodeSummary(id); }
+  } else if (params.edges.length) {
+    const e = edges.get(params.edges[0]);
+    highlightConnection(e._idx); showConnection(e._idx);
+  } else { resetHighlight(); panel.classList.add("hidden"); }
+});
+
+/* Filters */
+document.querySelectorAll("[data-filter]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-filter]").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const f = btn.dataset.filter;
+    edges.update(edges.get().map(e => {
+      const visible = f === "all" || e._kind === f;
+      return Object.assign(edgeStyle(e, true), { hidden: !visible });
+    }));
+    // hide model planets when viewing ownership only
+    nodes.update(nodes.get().map(n => n.kind === "model"
+      ? { id: n.id, hidden: f === "owner", opacity: 1 }
+      : { id: n.id, opacity: 1 }));
+  });
+});
+
+/* Toggle model names */
+document.getElementById("toggleNames").addEventListener("click", e => {
+  modelLabelsVisible = !modelLabelsVisible;
+  e.target.textContent = modelLabelsVisible ? "Hide model names" : "Show model names";
+  e.target.classList.toggle("active", !modelLabelsVisible);
+  nodes.update(nodes.get().filter(n => n.kind === "model").map(n => ({
+    id: n.id, font: { color: modelLabelsVisible ? "#f0cf8e" : "rgba(0,0,0,0)", size: 11, strokeWidth: modelLabelsVisible ? 3 : 0, strokeColor: "rgba(0,0,0,0.8)" }
+  })));
+});
+
+/* Search */
+const search = document.getElementById("search");
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) { resetHighlight(); return; }
+  const matches = nodes.get().filter(n => n.kind === "mfr" && n.label.toLowerCase().includes(q)).map(n => n.id);
+  nodes.update(nodes.get().map(n => ({ id: n.id, opacity: matches.includes(n.id) ? 1 : 0.14 })));
+  if (matches.length === 1) network.focus(matches[0], { scale: 1.1, animation: true });
+});
+search.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  const q = search.value.trim().toLowerCase();
+  const m = nodes.get().find(n => n.kind === "mfr" && n.label.toLowerCase().includes(q));
+  if (m) { network.selectNodes([m.id]); highlightForNode(m.id); showNodeSummary(m.id); network.focus(m.id, { scale: 1.2, animation: true }); }
+});
+
+/* Reset / physics */
+document.getElementById("fit").addEventListener("click", () => {
+  resetHighlight(); search.value = "";
+  document.querySelectorAll("[data-filter]").forEach(b => b.classList.toggle("active", b.dataset.filter === "all"));
+  edges.update(edges.get().map(e => Object.assign(edgeStyle(e, true), { hidden: false })));
+  nodes.update(nodes.get().map(n => ({ id: n.id, hidden: false, opacity: 1 })));
+  network.fit({ animation: true }); panel.classList.add("hidden");
+});
+let physicsOn = true;
+const physBtn = document.getElementById("physics");
+physBtn.addEventListener("click", () => {
+  physicsOn = !physicsOn;
+  network.setOptions({ physics: { enabled: physicsOn } });
+  physBtn.textContent = physicsOn ? "Pause drift" : "Resume drift";
+  physBtn.classList.toggle("active", !physicsOn);
+});
+
+showWelcome();
+</script>
+</body>
+</html>

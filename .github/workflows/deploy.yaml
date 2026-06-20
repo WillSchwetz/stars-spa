@@ -1,0 +1,110 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+    # paths:
+    #   - 'app/**'
+    #   - 'package.json'
+    #   - 'Dockerfile'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/willschwetz/stars-spa:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Notify Start (ntfy)
+        run: |
+          curl -d "🚀 Deploying The Grand Current..." ntfy.sh/grand-current-co-alerts-2026
+
+      - name: Sync Config Files to Linode (SCP)
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.LINODE_IP }}
+          username: ${{ secrets.LINODE_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Syncs your local compose and nginx config to the server
+          source: "docker-compose.yml,nginx/default.conf"
+          target: "/var/www/grand-current"
+          strip_components: 0
+
+      - name: Deploy to Linode via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LINODE_IP }}
+          username: ${{ secrets.LINODE_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/grand-current
+
+            # Login to pull your private coffee_site image
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Pull new images and restart services
+            docker compose pull
+            docker compose up -d --remove-orphans
+
+            # Clean up dangling images to save space
+            docker image prune -f
+
+      - name: Health Check
+        id: healthcheck
+        run: |
+          # Wait 10 seconds for Nginx to settle
+          sleep 10
+          # Check if the site returns a 200 OK
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" https://thegccc.ca)
+          if [ "$STATUS" -eq 200 ]; then
+            echo "site_status=online" >> $GITHUB_OUTPUT
+          else
+            echo "site_status=offline" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: Success Notification (ntfy)
+        if: success()
+        run: |
+          curl \
+            -H "Title: Deploy Success ☕" \
+            -H "Priority: high" \
+            -H "Tags: white_check_mark,chart_with_upwards_trend" \
+            -H "Actions: view, Open Analytics, https://thegccc.ca/stats, clear=true; view, Visit Site, https://thegccc.ca" \
+            -d "The Grand Current is live! Click below to check your traffic." \
+            ntfy.sh/grand-current-co-alerts-2026
+
+      - name: Failure Notification (ntfy)
+        if: failure()
+        run: |
+          curl -H "Title: Deploy FAILED" \
+               -H "Priority: urgent" \
+               -H "Tags: warning,skull" \
+               -H "Actions: view, Open Analytics, https://thegccc.ca/stats, clear=true; view, Visit Site, https://thegccc.ca" \
+               -d "Deployment failed. Check GitHub Actions logs for details." \
+               ntfy.sh/grand-current-co-alerts-2026
