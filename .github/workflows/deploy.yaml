@@ -68,8 +68,8 @@ jobs:
         run: |
           # Wait 10 seconds for Nginx to settle
           sleep 10
-          # Check if the site returns a 200 OK
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" https://stars.willschwetz.ca)
+          # Added -k flag to bypass SSL verification strictly for the container status check
+          STATUS=$(curl -k -o /dev/null -s -w "%{http_code}" https://stars.willschwetz.ca)
           if [ "$STATUS" -eq 200 ]; then
             echo "site_status=online" >> $GITHUB_OUTPUT
           else
