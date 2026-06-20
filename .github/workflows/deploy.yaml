@@ -42,18 +42,7 @@ jobs:
 
       - name: Notify Start (ntfy)
         run: |
-          curl -d "🚀 Deploying The Grand Current..." ntfy.sh/grand-current-co-alerts-2026
-
-      - name: Sync Config Files to Linode (SCP)
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.LINODE_IP }}
-          username: ${{ secrets.LINODE_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Syncs your local compose and nginx config to the server
-          source: "docker-compose.yml,nginx/default.conf"
-          target: "/var/www/grand-current"
-          strip_components: 0
+          curl -d "🚀 Deploying The Stars Car Map..." ntfy.sh/grand-current-co-alerts-2026
 
       - name: Deploy to Linode via SSH
         uses: appleboy/ssh-action@v1.0.3
